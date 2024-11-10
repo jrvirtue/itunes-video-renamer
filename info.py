@@ -544,6 +544,7 @@ def main():
     parser.add_argument('input_path', type=str, help='Path to the media file or directory containing media files.')
     parser.add_argument('output_directory', type=str, help='Directory where processed files will be saved.')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging.')
+    parser.add_argument('--printInfo', action='store_true', help='Print movie or TV show information.')
 
     args = parser.parse_args()
 
@@ -557,7 +558,23 @@ def main():
 
     input_path_obj = Path(input_path)
     
-    if input_path_obj.is_dir() or input_path_obj.is_file():
+    if args.printInfo:
+        if input_path_obj.is_file():
+            filename = input_path_obj.name
+            if is_movie(filename):
+                movie_name, year = parse_movie_filename(filename)
+                movie_info, _ = get_movie_info(movie_name, year)
+                if movie_info:
+                    print(movie_info)
+            elif is_tv_show(filename):
+                show_name, season, episode, _ = parse_tv_show_filename(filename)
+                tv_info, _ = get_tv_show_info(show_name, season, episode)
+                if tv_info:
+                    print(tv_info)
+        else:
+            logging.error("printInfo requires a single media file as input")
+            sys.exit(1)
+    elif input_path_obj.is_dir() or input_path_obj.is_file():
         # Process directory with batch processing
         process_directory(input_path_obj, Path(output_directory))
     else:
@@ -581,6 +598,77 @@ def print_movie_info(data):
     logging.info(f"Actors: {'N/A'}")     # TMDb requires additional requests to get actors from credits
     logging.info(f"Plot: {data.get('overview')}")
     logging.info(f"TMDb Rating: {data.get('vote_average')}")
+
+def get_media_info(file_path):
+    """Get media information for a file."""
+    try:
+        filename = Path(file_path).name
+        if is_movie(filename):
+            movie_name, year = parse_movie_filename(filename)
+            if movie_name and year:
+                movie_info, _ = get_movie_info(movie_name, year)
+                if movie_info:
+                    return (f"Type: Movie\n"
+                           f"Title: {movie_info.get('title', 'N/A')}\n"
+                           f"Year: {year}\n"
+                           f"Description: {movie_info.get('description', 'N/A')}")
+        elif is_tv_show(filename):
+            show_name, season, episode, episode_name = parse_tv_show_filename(filename)
+            if all([show_name, season, episode]):
+                tv_info, _ = get_tv_show_info(show_name, season, episode)
+                if tv_info:
+                    return (f"Type: TV Show\n"
+                           f"Show: {tv_info.get('show', 'N/A')}\n"
+                           f"Season: {season}\n"
+                           f"Episode: {episode}\n"
+                           f"Title: {tv_info.get('title', 'N/A')}\n"
+                           f"Description: {tv_info.get('description', 'N/A')}")
+        return "Could not determine media type or fetch information"
+    except Exception as e:
+        return f"Error getting media info: {str(e)}"
+
+def convert_file(file_path, output_base_dir):
+    """Convert a media file with proper metadata."""
+    try:
+        source_path = Path(file_path)
+        output_base_path = Path(output_base_dir)
+        filename = source_path.name
+        
+        if is_movie(filename):
+            movie_name, year = parse_movie_filename(filename)
+            if movie_name and year:
+                destination_dir = output_base_path / "Movies" / sanitize_filename(movie_name)
+                destination_dir.mkdir(parents=True, exist_ok=True)
+                destination_file = destination_dir / f"{sanitize_filename(movie_name)}.mp4"
+                
+                movie_info, cover_art_url = get_movie_info(movie_name, year)
+                if movie_info:
+                    cover_art_path = download_cover_art(cover_art_url)
+                    subtitle_streams = get_subtitle_streams(source_path)
+                    process_file(source_path, destination_file, source_path.suffix, movie_info, cover_art_path, subtitle_streams)
+                    if cover_art_path:
+                        os.remove(cover_art_path)
+                    return f"Successfully converted movie: {movie_name}"
+                
+        elif is_tv_show(filename):
+            show_name, season, episode, episode_name = parse_tv_show_filename(filename)
+            if all([show_name, season, episode]):
+                destination_dir = output_base_path / "TV Shows" / sanitize_filename(show_name) / f"Season {season}"
+                destination_dir.mkdir(parents=True, exist_ok=True)
+                destination_file = destination_dir / f"{episode.zfill(2)} {sanitize_filename(episode_name or 'Episode ' + episode)}.mp4"
+                
+                tv_info, cover_art_url = get_tv_show_info(show_name, season, episode)
+                if tv_info:
+                    cover_art_path = download_cover_art(cover_art_url)
+                    subtitle_streams = get_subtitle_streams(source_path)
+                    process_file(source_path, destination_file, source_path.suffix, {'type': 'episode', **tv_info}, cover_art_path, subtitle_streams)
+                    if cover_art_path:
+                        os.remove(cover_art_path)
+                    return f"Successfully converted episode: {show_name} S{season}E{episode}"
+        
+        return "Could not convert file: unable to determine media type or fetch information"
+    except Exception as e:
+        return f"Error converting file: {str(e)}"
 
 if __name__ == '__main__':
     main()
