@@ -1,3 +1,5 @@
+#! /usr/bin/env -S python3
+
 import os
 import re
 import sys
@@ -88,8 +90,9 @@ def parse_tv_show_filename(filename):
         season = str(info.get('season', '0')).zfill(2)
         episode = str(info.get('episode', '0')).zfill(2)
         episode_name = info.get('episode_title', '').replace('.', ' ').strip()
-        if not all([show_name, season, episode, episode_name]):
+        if not all([show_name, season, episode]):
             logging.warning(f"Incomplete parsing for TV show filename '{filename}'.")
+            logging.warning(f"Parsed the following TV Show - Show: {show_name}, Season: {season}, Episode: {episode}, Episode Name: {episode_name}")
             return None, None, None, None
         logging.debug(f"Parsed TV Show - Show: {show_name}, Season: {season}, Episode: {episode}, Episode Name: {episode_name}")
         return show_name, season, episode, episode_name
@@ -105,11 +108,12 @@ def is_movie(filename):
     return movie_name is not None and year is not None
 
 def is_tv_show(filename):
+    
     """
     Determine if the file is a TV show episode based on its filename.
     """
     show_name, season, episode, episode_name = parse_tv_show_filename(filename)
-    return all([show_name, season, episode, episode_name])
+    return all([show_name, season, episode])
 
 def get_tmdb_headers():
     """
@@ -452,12 +456,11 @@ def process_directory(input_dir, output_base_dir):
     input_path = Path(input_dir)
     output_base_path = Path(output_base_dir)
 
-    if not input_path.is_dir():
-        logging.error(f"Input path '{input_dir}' is not a directory.")
-        return
-
     # Recursively search for .mp4 and .mkv files
-    media_files = list(input_path.rglob('*.[Mm][Pp]4')) + list(input_path.rglob('*.[Mm][Kk][Vv]'))
+    if input_path.is_dir():
+        media_files = list(input_path.rglob('*.[Mm][Pp]4')) + list(input_path.rglob('*.[Mm][Kk][Vv]'))
+    else:
+        media_files = [input_path]
 
     if not media_files:
         logging.info(f"No .mp4 or .mkv files found in directory '{input_dir}'.")
@@ -502,12 +505,12 @@ def process_directory(input_dir, output_base_dir):
             elif is_tv_show(filename):
                 # TV show processing using guessit
                 show_name, season, episode, episode_name = parse_tv_show_filename(filename)
-                if not all([show_name, season, episode, episode_name]):
+                if not all([show_name, season, episode]):
                     logging.error(f"Failed to parse TV show details from filename '{filename}'. Skipping.")
                     continue
 
                 # Build the destination directory: TV/Show Name/Season XX/
-                destination_dir = output_base_path / "TV" / sanitize_filename(show_name) / f"Season {season}"
+                destination_dir = output_base_path / "TV Shows" / sanitize_filename(show_name) / f"Season {season}"
                 destination_dir.mkdir(parents=True, exist_ok=True)
 
                 # Format the new filename: 'XX Episode Name.mp4'
@@ -516,6 +519,7 @@ def process_directory(input_dir, output_base_dir):
 
                 # Retrieve metadata and cover art
                 tv_info, cover_art_url = get_tv_show_info(show_name, season, episode)
+                print(tv_info)
                 if not tv_info:
                     logging.error(f"Failed to retrieve TV show information for '{show_name}'. Skipping.")
                     continue
@@ -552,78 +556,8 @@ def main():
     output_directory = args.output_directory
 
     input_path_obj = Path(input_path)
-
-    if input_path_obj.is_file():
-        filename = input_path_obj.name
-        file_ext = input_path_obj.suffix.lower()
-
-        if is_movie(filename):
-            # Movie processing
-            movie_name, year = parse_movie_filename(filename)
-            if not all([movie_name, year]):
-                logging.error(f"Failed to parse movie details from filename '{filename}'. Exiting.")
-                sys.exit(1)
-
-            # Build the destination directory: Movies/Movie Name/
-            destination_dir = Path(output_directory) / "Movies" / sanitize_filename(movie_name)
-            destination_dir.mkdir(parents=True, exist_ok=True)
-
-            # Format the new filename: 'Movie Name.mp4'
-            new_filename = f"{sanitize_filename(movie_name)}{file_ext}"
-            destination_file = destination_dir / new_filename
-
-            # Retrieve metadata and cover art
-            movie_info, cover_art_url = get_movie_info(movie_name, year)
-            if not movie_info:
-                logging.error(f"Failed to retrieve movie information for '{movie_name}'. Exiting.")
-                sys.exit(1)
-
-            cover_art_path = download_cover_art(cover_art_url)
-            subtitle_streams = get_subtitle_streams(input_path_obj)
-
-            # Process the file
-            process_file(input_path_obj, destination_file, file_ext, movie_info, cover_art_path, subtitle_streams)
-
-            # Clean up temporary cover art file
-            if cover_art_path:
-                os.remove(cover_art_path)
-
-        elif is_tv_show(filename):
-            # TV show processing using guessit
-            show_name, season, episode, episode_name = parse_tv_show_filename(filename)
-            if not all([show_name, season, episode, episode_name]):
-                logging.error(f"Failed to parse TV show details from filename '{filename}'. Exiting.")
-                sys.exit(1)
-
-            # Build the destination directory: TV/Show Name/Season XX/
-            destination_dir = Path(output_directory) / "TV" / sanitize_filename(show_name) / f"Season {season}"
-            destination_dir.mkdir(parents=True, exist_ok=True)
-
-            # Format the new filename: 'XX Episode Name.mp4'
-            new_filename = f"{episode.zfill(2)} {sanitize_filename(episode_name)}{file_ext}"
-            destination_file = destination_dir / new_filename
-
-            # Retrieve metadata and cover art
-            tv_info, cover_art_url = get_tv_show_info(show_name, season, episode)
-            if not tv_info:
-                logging.error(f"Failed to retrieve TV show information for '{show_name}'. Exiting.")
-                sys.exit(1)
-
-            cover_art_path = download_cover_art(cover_art_url)
-            subtitle_streams = get_subtitle_streams(input_path_obj)
-
-            # Process the file
-            process_file(input_path_obj, destination_file, file_ext, {'type': 'episode', **tv_info}, cover_art_path, subtitle_streams)
-
-            # Clean up temporary cover art file
-            if cover_art_path:
-                os.remove(cover_art_path)
-
-        else:
-            logging.warning(f"Could not determine media type for file '{filename}'. Exiting.")
-            sys.exit(1)
-
-    elif input_path_obj.is_dir():
+    
+    if input_path_obj.is_dir() or input_path_obj.is_file():
         # Process directory with batch processing
         process_directory(input_path_obj, Path(output_directory))
     else:
