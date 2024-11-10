@@ -4,9 +4,20 @@ from pathlib import Path
 from info import get_media_info, convert_file
 import logging
 import glob
+import argparse
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+parser = argparse.ArgumentParser()
+parser.add_argument('--port', type=int, default=7860, help='Port number to run server on')
+parser.add_argument('--log', type=bool, default=False, help='enable logging')
+args = parser.parse_args()
+
+if args.log:
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+else:
+    logger = logging.getLogger(__name__)
+    logger.disabled = True
+
 
 VALID_EXTENSIONS = ('.mkv', '.avi', '.mp4', '.m4v')
 
@@ -28,25 +39,29 @@ def update_media_info(selected_path):
     
     return output
 
-def convert_media(selected_path, output_directory):
+def convert_media(selected_path, output_directory,output_log):
     if not selected_path:
         return "Please select a file or directory"
     
-    ret = ""
+    ret = output_log
 
     if not isinstance(selected_path,list):
         selected_path = [selected_path]
     
     for path in selected_path:
         for message in convert_file(str(path), output_directory):
-            yield message
+            output_log += message
+            yield output_log
             logger.warning("FROM YIELD!!" + message)
 
     return ret
+    # Set up argument parser
+
 
 # Create Gradio interface
 with gr.Blocks() as app:
     gr.Markdown("# iTunes Video Renamer")
+    output_log = gr.State("")
     with gr.Row():
         file_types = gr.Dropdown(
             label="Select a File Type",
@@ -85,12 +100,11 @@ with gr.Blocks() as app:
     )
     convert_btn.click(
         fn=convert_media,
-        inputs=[selected_path, output_dir],
+        inputs=[selected_path, output_dir,output_log],
         outputs=[convert_output]
     )
 if __name__ == "__main__":
     # Ensure we have absolute paths
     media_path = Path("/media").resolve()
     current_path = Path(".").resolve()
-    app.queue()
-    app.launch(server_name="0.0.0.0", server_port=7860,allowed_paths=[str(current_path), str(media_path)])
+    app.queue().launch(server_name="0.0.0.0", server_port=args.port, allowed_paths=[str(current_path), str(media_path)])

@@ -16,6 +16,26 @@ from dotenv import load_dotenv
 from guessit import guessit
 import hashlib
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--port', type=int, default=7860, help='Port number to run server on')
+parser.add_argument('--log', type=bool, default=False, help='enable logging')
+args = parser.parse_args() 
+
+if args.log:
+    # Configure logging
+    logging.basicConfig(
+        level=logging.DEBUG,  # Set to DEBUG for verbose logging
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler("media_processor.log"),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    logger = logging.getLogger(__name__)
+else:
+    logger = logging.getLogger(__name__)
+    logger.disabled = True
+
 # Load environment variables from .env file (if present)
 load_dotenv()
 
@@ -25,15 +45,7 @@ if not TMDB_API_KEY:
     logging.error("TMDB_API_KEY environment variable is not set.")
     sys.exit(1)
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,  # Set to DEBUG for verbose logging
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("media_processor.log"),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+
 
 def sanitize_filename(name):
     """
