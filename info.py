@@ -368,11 +368,15 @@ def embed_metadata_with_ffmpeg(source_path, destination_path, metadata, cover_ar
             map_options.extend(['-map', '1:v:0'])
             # Copy video and audio streams
             codec_options.extend(['-c:v:0', 'copy', '-c:a:0', 'copy'])
+            codec_options.extend(["-tag:v:0", "hvc1"])  # Add HEVC tag for compatibility
             # Encode cover art
             codec_options.extend(['-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic'])
         else:
             # If no cover art, copy video and audio directly
             codec_options.extend(['-c:v', 'copy', '-c:a', 'copy'])
+            codec_options.extend(["-tag:v", "hvc1"])  # Add HEVC tag for compatibility
+
+        
 
         # Embed subtitles
         for idx, subtitle in enumerate(subtitle_streams):
@@ -636,6 +640,7 @@ def convert_file(file_path, output_base_dir):
         
         if is_movie(filename):
             movie_name, year = parse_movie_filename(filename)
+            yield f"Converting movie: {movie_name}...."
             if movie_name and year:
                 destination_dir = output_base_path / "Movies" / sanitize_filename(movie_name)
                 destination_dir.mkdir(parents=True, exist_ok=True)
@@ -648,10 +653,12 @@ def convert_file(file_path, output_base_dir):
                     process_file(source_path, destination_file, source_path.suffix, movie_info, cover_art_path, subtitle_streams)
                     if cover_art_path:
                         os.remove(cover_art_path)
+                    yield f"complete\n"
                     return f"Successfully converted movie: {movie_name}"
                 
         elif is_tv_show(filename):
             show_name, season, episode, episode_name = parse_tv_show_filename(filename)
+            yield f"Converting tv show: {show_name}: S{season}E{episode}..."
             if all([show_name, season, episode]):
                 destination_dir = output_base_path / "TV Shows" / sanitize_filename(show_name) / f"Season {season}"
                 destination_dir.mkdir(parents=True, exist_ok=True)
@@ -664,6 +671,7 @@ def convert_file(file_path, output_base_dir):
                     process_file(source_path, destination_file, source_path.suffix, {'type': 'episode', **tv_info}, cover_art_path, subtitle_streams)
                     if cover_art_path:
                         os.remove(cover_art_path)
+                    yield f"complete\n"
                     return f"Successfully converted episode: {show_name} S{season}E{episode}"
         
         return "Could not convert file: unable to determine media type or fetch information"
